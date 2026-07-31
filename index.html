@@ -1,0 +1,1496 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<!-- ⚠️ 這個 viewport 一定要留:少了它手機會用 ~980px 桌面寬度渲染再縮小,字會小到看不清楚。
+     (本模板最早是給 Artifact 用的,Artifact 會自動補 head;改用 GitHub Pages 後必須自己寫。) -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>SKU 剩餘庫存追蹤</title>
+<style>
+  :root {
+    --ground: #f5f7fb;
+    --surface: #ffffff;
+    --surface-2: #eef1f7;
+    --border: #dfe4ee;
+    --ink: #141821;
+    --muted: #5b6472;
+    --faint: #8a93a3;
+    --accent: #3b5bdb;
+    --accent-soft: #e7ecfd;
+    --good: #12885a;
+    --good-soft: #dff3e8;
+    --warn: #b26a00;
+    --warn-soft: #fbeecf;
+    --crit: #cf2f45;
+    --crit-soft: #fbe0e4;
+    --shadow: 0 1px 2px rgba(20,24,33,.05), 0 4px 16px rgba(20,24,33,.05);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0c0f16; --surface: #141922; --surface-2: #1b2230; --border: #262f3f;
+      --ink: #e9edf4; --muted: #99a3b3; --faint: #6b7688;
+      --accent: #7b96ff; --accent-soft: #1d2740;
+      --good: #35c98a; --good-soft: #123123; --warn: #e5a53a; --warn-soft: #3a2c10;
+      --crit: #ff6577; --crit-soft: #3a1720;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 22px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #f5f7fb; --surface: #ffffff; --surface-2: #eef1f7; --border: #dfe4ee;
+    --ink: #141821; --muted: #5b6472; --faint: #8a93a3;
+    --accent: #3b5bdb; --accent-soft: #e7ecfd;
+    --good: #12885a; --good-soft: #dff3e8; --warn: #b26a00; --warn-soft: #fbeecf;
+    --crit: #cf2f45; --crit-soft: #fbe0e4;
+    --shadow: 0 1px 2px rgba(20,24,33,.05), 0 4px 16px rgba(20,24,33,.05);
+  }
+  :root[data-theme="dark"] {
+    --ground: #0c0f16; --surface: #141922; --surface-2: #1b2230; --border: #262f3f;
+    --ink: #e9edf4; --muted: #99a3b3; --faint: #6b7688;
+    --accent: #7b96ff; --accent-soft: #1d2740;
+    --good: #35c98a; --good-soft: #123123; --warn: #e5a53a; --warn-soft: #3a2c10;
+    --crit: #ff6577; --crit-soft: #3a1720;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 22px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 64px; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+  /* Header */
+  header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; margin-bottom: 4px; }
+  header.top h1 { font-size: 1.5rem; font-weight: 720; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+  .updated { color: var(--faint); font-size: .82rem; }
+  .updated b { color: var(--muted); font-weight: 600; }
+
+  /* 頁首工具列:資料時間 + 刷新 */
+  .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 22px; }
+  .topbar h1 { font-size: 1.5rem; font-weight: 720; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+  .topbar .spacer { flex: 1; }
+  .freshness { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: .8rem; color: var(--faint); }
+  .freshness .age { font-weight: 700; }
+  .freshness .age.fresh { color: var(--good); }
+  .freshness .age.stale { color: var(--warn); }
+  button.refresh {
+    display: inline-flex; align-items: center; gap: 7px; flex: none;
+    background: var(--surface); color: var(--accent); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 14px; font: inherit; font-size: .86rem; font-weight: 650;
+    cursor: pointer; box-shadow: var(--shadow);
+  }
+  button.refresh:hover { background: var(--accent-soft); border-color: var(--accent); }
+  button.refresh:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.refresh[disabled] { opacity: .6; cursor: default; }
+  button.refresh svg { display: block; }
+  button.refresh.spinning svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { button.refresh.spinning svg { animation: none; } }
+  /* 名字選單 */
+  .peoplebar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+  .peoplebar .lab { color: var(--muted); font-size: .8rem; font-weight: 600; margin-right: 2px; }
+  button.who {
+    background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 999px; padding: 7px 15px; font: inherit; font-size: .86rem; font-weight: 650; cursor: pointer;
+  }
+  button.who:hover { border-color: var(--accent); color: var(--ink); }
+  button.who:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.who[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.who .cnt { font-weight: 500; opacity: .8; font-size: .78rem; }
+  .who-custom { color: var(--faint); font-size: .78rem; font-style: italic; }
+  button.who-save {
+    background: var(--good); border: 1px solid var(--good); color: #fff;
+    border-radius: 999px; padding: 7px 15px; font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer;
+  }
+  button.who-save:hover { filter: brightness(1.08); }
+  button.who-save:focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
+  button.who-link {
+    background: none; border: 1px solid var(--border); color: var(--accent);
+    border-radius: 999px; padding: 6px 12px; font: inherit; font-size: .78rem; font-weight: 650; cursor: pointer;
+  }
+  button.who-link:hover { border-color: var(--accent); background: var(--accent-soft); }
+  button.who-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.who-reset {
+    background: none; border: 1px dashed var(--border); color: var(--faint);
+    border-radius: 999px; padding: 6px 12px; font: inherit; font-size: .78rem; font-weight: 600; cursor: pointer;
+  }
+  button.who-reset:hover { border-color: var(--crit); color: var(--crit); }
+  button.who-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* 專案勾選列 */
+  .filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 24px; }
+  .filterbar .lab { color: var(--muted); font-size: .8rem; font-weight: 600; margin-right: 2px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 999px; padding: 6px 13px 6px 10px; font: inherit; font-size: .84rem;
+    font-weight: 600; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--ink); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chip .box {
+    width: 15px; height: 15px; border-radius: 4px; flex: none;
+    border: 1.5px solid var(--border); display: inline-flex; align-items: center; justify-content: center;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .chip[aria-pressed="true"] .box { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip .box svg { display: block; }
+  .chip[aria-pressed="false"] .box svg { visibility: hidden; }
+  .chip .cnt { font-weight: 500; opacity: .75; font-size: .78rem; }
+  .chip-all {
+    background: none; border: 1px dashed var(--border); color: var(--muted);
+    border-radius: 999px; padding: 6px 12px; font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer;
+  }
+  .chip-all:hover { border-color: var(--accent); color: var(--accent); }
+  .chip-all:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* 總覽列 */
+  .overview {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 16px; margin: 0 0 26px; font-size: .88rem; color: var(--muted);
+    box-shadow: var(--shadow);
+  }
+  .overview b { color: var(--ink); font-weight: 720; font-variant-numeric: tabular-nums; }
+  .overview b.hot { color: var(--crit); }
+  .overview b.ok { color: var(--good); }
+  .overview .sep { color: var(--border); margin: 0 9px; }
+  .overview .ov-cmp { color: var(--faint); font-size: .82em; margin-left: 6px; }
+
+  /* 顯示選項列(含「卡片 / 表格」切換) */
+  .optbar { margin-top: -14px; }
+  .optbar .chip { font-size: .78rem; padding: 4px 10px 4px 7px; }
+  .seg-group { display: inline-flex; border: 1px solid var(--border); border-radius: 999px;
+    overflow: hidden; background: var(--surface); flex: none; }
+  button.seg { background: none; border: none; color: var(--muted); padding: 4px 13px;
+    font: inherit; font-size: .78rem; font-weight: 650; cursor: pointer; }
+  button.seg + button.seg { border-left: 1px solid var(--border); }
+  button.seg:hover { color: var(--ink); }
+  button.seg[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  button.seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .optbar .vdiv { width: 1px; height: 18px; background: var(--border); margin: 0 5px; flex: none; }
+
+  /* 表格檢視 —— 一列一個方案,用來橫向比較「誰賣得快」。欄位由「顯示內容」的勾選決定。 */
+  .tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); }
+  table.tv { border-collapse: collapse; width: 100%; min-width: 560px; font-size: .84rem; }
+  table.tv th, table.tv td {
+    padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle;
+  }
+  table.tv thead th {
+    background: var(--surface-2); color: var(--muted); font-size: .74rem; font-weight: 700;
+    letter-spacing: .02em; white-space: nowrap;
+  }
+  table.tv th.sortable { cursor: pointer; user-select: none; }
+  table.tv th.sortable:hover { color: var(--accent); }
+  table.tv th[aria-sort] { color: var(--accent); }
+  table.tv th .arw { font-size: .68rem; opacity: .45; }
+  table.tv th[aria-sort] .arw { opacity: 1; }
+  table.tv tbody tr:last-child td { border-bottom: none; }
+  table.tv tbody tr:hover td { background: var(--accent-soft); }
+  table.tv tr.s-out { opacity: .72; }
+  table.tv td.r, table.tv th.r { text-align: right; }
+  table.tv td.r { font-variant-numeric: tabular-nums; }
+  table.tv td.c-title { border-left: 3px solid var(--stripe, transparent); }
+  table.tv tr.s-good { --stripe: var(--good); }
+  table.tv tr.s-warn { --stripe: var(--warn); }
+  table.tv tr.s-crit { --stripe: var(--crit); }
+  table.tv tr.s-out  { --stripe: var(--faint); }
+  /* 方案名稱固定在左邊:欄位變多之後桌機也會需要橫向滑動,滑走了就不知道在看哪一列 */
+  table.tv th.c-title, table.tv td.c-title {
+    position: sticky; left: 0; z-index: 2; min-width: 190px;
+    background: var(--surface); box-shadow: 1px 0 0 var(--border);
+  }
+  table.tv th.c-title { background: var(--surface-2); }
+  table.tv tbody tr:hover td.c-title { background: var(--accent-soft); }
+  table.tv td.c-rest { white-space: nowrap; }
+  table.tv td.c-rest .restock { margin: 0; padding: 0; border: none; }
+  .t-title { font-weight: 650; line-height: 1.35; }
+  .t-price { color: var(--faint); font-size: .74rem; font-variant-numeric: tabular-nums; }
+  .t-remain { font-size: 1.05rem; font-weight: 760; }
+  .t-remain.s-good { color: var(--good); } .t-remain.s-warn { color: var(--warn); }
+  .t-remain.s-crit { color: var(--crit); } .t-remain.s-out  { color: var(--faint); }
+  .t-dim { color: var(--faint); }
+  .t-b { font-weight: 700; }
+  .t-now { color: var(--ink); font-weight: 780; }
+  .t-add { color: var(--accent); font-weight: 750; }
+  .t-hot { color: var(--warn); font-weight: 700; }
+  .sorthint { color: var(--faint); font-size: .8rem; }
+
+  /* 卡片上的銷售事實 —— 刻意壓低視覺重量,讓「剩餘份數」的大字維持唯一焦點 */
+  .facts { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: baseline;
+    gap: 1px 5px; font-size: .76rem; color: var(--faint); }
+  .facts b { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+  /* 「今天」是最能反映當下的數字,稍微提一下視覺重量 —— 但仍不能搶走「剩餘」大字的焦點 */
+  .facts-today { cursor: help; }
+  .facts-today b { color: var(--ink); font-weight: 780; }
+  .facts-k { color: var(--faint); }
+  .facts-sep { color: var(--border); }
+  .facts-wait { color: var(--faint); font-style: italic; }
+  .facts-proj { margin-top: 3px; font-size: .76rem; color: var(--warn); font-weight: 600; }
+  .facts-proj b { font-weight: 780; }
+  .pctc { color: var(--faint); }
+
+  /* 卡片上的預估售罄 */
+  .eta { margin-top: 9px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; font-size: .78rem; }
+  .eta-hot  { color: var(--crit); font-weight: 700; }
+  .eta-warn { color: var(--warn); font-weight: 700; }
+  .eta-ok   { color: var(--good); font-weight: 650; }
+  .eta-wait { color: var(--faint); font-style: italic; }
+  .eta-vel  { color: var(--faint); font-variant-numeric: tabular-nums; }
+  .eta-sep  { color: var(--border); }
+  .eta-note { font-size: .68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+    background: var(--warn-soft); color: var(--warn); cursor: help; }
+  .conf { font-size: .68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; letter-spacing: .02em; }
+  .conf-high { background: var(--good-soft); color: var(--good); }
+  .conf-mid  { background: var(--surface-2); color: var(--muted); }
+  .conf-low  { background: var(--warn-soft); color: var(--warn); }
+
+  .stat .sub { color: var(--faint); font-size: .72rem; margin-top: 3px; }
+
+  .empty-note { color: var(--muted); background: var(--surface); border: 1px dashed var(--border);
+    border-radius: 12px; padding: 22px; text-align: center; font-size: .9rem; }
+
+  .toast-msg {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    background: var(--ink); color: var(--ground); font-size: .86rem; font-weight: 600;
+    padding: 10px 18px; border-radius: 999px; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    z-index: 50; max-width: calc(100vw - 32px); text-align: center;
+  }
+
+  /* Summary strip */
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0 8px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+  .stat .k { color: var(--muted); font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; }
+  .stat .v { font-size: 1.4rem; font-weight: 700; margin-top: 3px; }
+  .stat .v small { font-size: .8rem; color: var(--faint); font-weight: 500; }
+
+  .banner { display: flex; align-items: center; gap: 10px; margin: 18px 0 4px; padding: 12px 16px; border-radius: 12px; font-size: .92rem; font-weight: 600; }
+  .banner.crit { background: var(--crit-soft); color: var(--crit); }
+  .banner.warn { background: var(--warn-soft); color: var(--warn); }
+  .banner.good { background: var(--good-soft); color: var(--good); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex: none; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 18%, transparent); }
+
+  .section-label { display: flex; align-items: baseline; gap: 10px; margin: 30px 0 12px; }
+  .section-label h2 { font-size: .95rem; font-weight: 700; margin: 0; letter-spacing: .01em; }
+  .section-label span { color: var(--faint); font-size: .8rem; }
+  .rule { flex: 1; height: 1px; background: var(--border); }
+
+  /* SKU cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 16px 14px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+  .card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--stripe, var(--border)); }
+  .card.s-good { --stripe: var(--good); }
+  .card.s-warn { --stripe: var(--warn); }
+  .card.s-crit { --stripe: var(--crit); }
+  .card.s-out  { --stripe: var(--faint); opacity: .82; }
+  .card.s-ended { --stripe: var(--border); }
+  .eta-final { color: var(--muted); font-weight: 650; }
+  .ended-note { color: var(--faint); font-size: .78rem; }
+
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .card h3 { font-size: 1rem; font-weight: 680; margin: 0; letter-spacing: -.005em; }
+  .price { color: var(--muted); font-size: .82rem; margin-top: 2px; }
+  .pill { flex: none; font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; letter-spacing: .02em; white-space: nowrap; }
+  .pill.s-good { background: var(--good-soft); color: var(--good); }
+  .pill.s-warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.s-crit { background: var(--crit-soft); color: var(--crit); }
+  .pill.s-out  { background: var(--surface-2); color: var(--faint); }
+
+  .bignum { display: flex; align-items: baseline; gap: 6px; margin: 14px 0 10px; }
+  .bignum .n { font-size: 2.1rem; font-weight: 760; line-height: 1; letter-spacing: -.02em; }
+  .bignum .n.s-good { color: var(--good); } .bignum .n.s-warn { color: var(--warn); }
+  .bignum .n.s-crit { color: var(--crit); } .bignum .n.s-out { color: var(--faint); }
+  .bignum .lab { color: var(--muted); font-size: .82rem; }
+
+  .meter { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .meter i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+  .meta-row { display: flex; justify-content: space-between; color: var(--muted); font-size: .78rem; margin-top: 7px; }
+
+  .stale-warn { color: var(--warn); font-size: .78rem; font-weight: 600; }
+
+  /* 建議補貨量 */
+  .advice {
+    margin-top: 9px; padding: 8px 11px; border-radius: 9px;
+    background: var(--accent-soft); color: var(--accent);
+    font-size: .8rem; font-weight: 650;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
+  }
+  .advice b { font-size: 1rem; font-weight: 780; font-variant-numeric: tabular-nums; }
+  .advice-why { color: var(--muted); font-weight: 500; font-size: .74rem; }
+
+  /* 已結束專案摺疊區 */
+  details.ended { margin-top: 44px; border-top: 1px solid var(--border); padding-top: 18px; }
+  details.ended > summary {
+    cursor: pointer; color: var(--muted); font-size: .88rem; font-weight: 650;
+    padding: 8px 2px; list-style: revert;
+  }
+  details.ended > summary:hover { color: var(--ink); }
+  details.ended > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ended-body { margin-top: 18px; opacity: .72; }
+
+  .foot { margin-top: 40px; color: var(--faint); font-size: .78rem; line-height: 1.7; }
+  .foot a { color: var(--accent); text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+  /* 補貨捷徑列 */
+  .restock { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border);
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; }
+  .restock .rlab { color: var(--faint); font-size: .72rem; font-weight: 600; margin-right: 1px; }
+  button.rbtn {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--ink);
+    border-radius: 7px; padding: 4px 8px; font: inherit; font-size: .76rem; font-weight: 650;
+    cursor: pointer; font-variant-numeric: tabular-nums; flex: none;
+  }
+  button.rbtn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  button.rbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.rbtn.rbtn-suggest { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.rbtn.rbtn-suggest:hover { filter: brightness(1.08); color: #fff; }
+
+  /* 「先別吵我」開關 */
+  .head-right { display: flex; align-items: center; gap: 6px; flex: none; }
+  button.qbtn {
+    background: none; border: 1px solid transparent; border-radius: 7px;
+    padding: 2px 5px; font-size: .9rem; line-height: 1.1; cursor: pointer;
+    opacity: .35; flex: none;
+  }
+  button.qbtn:hover { opacity: 1; border-color: var(--border); background: var(--surface-2); }
+  button.qbtn.on { opacity: 1; }
+  button.qbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  td.c-st button.qbtn { margin-left: 6px; vertical-align: middle; }
+
+  a.editlink { color: var(--accent); font-size: .78rem; text-decoration: none; font-weight: 600; }
+  a.editlink:hover { text-decoration: underline; }
+  a.editlink:focus-visible, .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: no-preference) { .meter i { transition: width .4s ease; } }
+
+  /* 手機版:單欄、縮小留白、統計卡兩欄 */
+  @media (max-width: 640px) {
+    .wrap { padding: 18px 14px 48px; }
+    .topbar h1 { font-size: 1.25rem; }
+    .grid { grid-template-columns: 1fr; }
+    .summary { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+    .stat { padding: 11px 13px; }
+    .stat .v { font-size: 1.2rem; }
+    .overview { font-size: .82rem; padding: 11px 13px; }
+    .overview .sep { margin: 0 6px; }
+    .peoplebar, .filterbar { gap: 6px; }
+    button.who { padding: 6px 12px; font-size: .82rem; }
+    .chip { padding: 5px 11px 5px 8px; font-size: .8rem; }
+    .freshness { align-items: flex-start; }
+    .topbar { gap: 8px 10px; }
+    /* 表格在手機上一定會超出畫面寬度 —— 讓它橫向滑動,但先砍掉可以從別欄推出來的「限量」
+       (限量 = 剩餘 + 已賣,而已賣那欄已經有了),減少要滑的距離 */
+    table.tv { font-size: .8rem; min-width: 480px; }
+    table.tv th, table.tv td { padding: 8px 9px; }
+    table.tv .c-limit { display: none; }
+    /* 固定首欄的規則在上面(桌機也適用),手機只需要把它壓窄 */
+    table.tv th.c-title, table.tv td.c-title { min-width: 130px; max-width: 150px; }
+  }
+</style>
+
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+  // 資料放在獨立的 data.json,由頁面以「不快取」方式讀取。
+  // 原因:GitHub Pages 的 HTML 有約 10 分鐘的 CDN 快取,若把資料寫死在 HTML 裡,
+  // 就算排程已經更新,打開仍可能看到十分鐘前的數字(實際踩過兩次)。
+  // 拆開後即使 HTML 是快取的舊版,數字永遠是最新的。
+  let DATA = {}, CONFIG = {}, GENERATED_AT = "";
+  let th = 2;
+  let COVER_DAYS = 0.5;   // 建議補貨量要撐幾天(見 config.json 的 restock.cover_days)
+  let SLOW_DAYS = 3;      // 還能撐這麼多天以上 = 慢銷,不因為「數量少」而催補貨
+  let ALWAYS_AT = 1;      // 不管賣多慢,掉到這個數字一定急
+  const nf = n => (n == null ? "—" : n.toLocaleString("en-US"));
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+  // 判斷「該不該補」用兩條規則,任一成立就算急:
+  //
+  //   ① 剩餘 ≤ 補貨點(預設 2 份) —— 這是使用者實際的做法:
+  //      「剩 3 個還好,有人買掉一兩個就趕快補」。慢銷方案剩 1 份時
+  //      「還能撐 3 天」是真的,但他還是要補,所以絕對數量必須是主要觸發條件。
+  //
+  //   ② 撐不過一個補貨週期 —— 補強用。快銷方案可能剩 6 份卻半天內歸零,
+  //      光看數量會來不及。
+  //
+  // 只用其中一條都會漏:只看數量會漏掉快銷,只看速度會漏掉慢銷剩 1 份。
+  // 「先別吵我」名單:逐個 SKU 自己標記,標記後只有剩到 ALWAYS_AT(預設 1)才提醒。
+  // 存在這台瀏覽器(跟名字選單、排序、欄位設定同一套作法),不影響別人也不用改設定檔。
+  // ⚠️ 這是**前端顯示**的設定,桌面通知/Email 是本機腳本發的,讀不到這裡 ——
+  //    那邊仍照 config 的規則走。
+  const QUIET_KEY = "sku-tracker.quiet";
+  let quietSet = new Set();
+  try { quietSet = new Set(JSON.parse(localStorage.getItem(QUIET_KEY) || "[]")); } catch (e) {}
+  const quietIdOf = (cfg, t) => cfg.slug + "|" + (t.reward_id || t.title);
+  const isQuiet = (cfg, t) => quietSet.has(quietIdOf(cfg, t));
+  function toggleQuiet(id) {
+    if (quietSet.has(id)) quietSet.delete(id); else quietSet.add(id);
+    try { localStorage.setItem(QUIET_KEY, JSON.stringify([...quietSet])); } catch (e) {}
+  }
+
+  function statusOf(t, dEnd, quiet) {
+    if (t.remaining === 0) return "out";
+    // ⓪ 剩到這個數字一定急,慢銷也不豁免(使用者:「但剩1一定急」)
+    if (t.remaining <= ALWAYS_AT) return "crit";
+    // 標記過「先別吵我」的:除了上面那條,其餘一律當正常
+    if (quiet) return "good";
+
+    const daysOfStock = (t.perDay && t.perDay > 0) ? t.remaining / t.perDay : null;
+    const need = dEnd != null && dEnd > 0 ? Math.min(COVER_DAYS, dEnd) : COVER_DAYS;
+
+    // ② 快銷來不及 —— 剩 6 份也可能半天歸零,光看數量會太晚
+    if (daysOfStock != null && daysOfStock < need) return "crit";
+
+    // 慢銷豁免:2026-08-24 使用者指出剩 2 份卻能撐 8 天的方案不該催他補貨。
+    // 只在算得出銷速時才豁免;銷速未知就照舊提醒(寧可多提醒,不要漏)。
+    const slow = daysOfStock != null && daysOfStock >= SLOW_DAYS;
+
+    if (t.remaining <= th && !slow) return "crit";              // ① 補貨點
+    if (daysOfStock != null && daysOfStock < need * 2) return "warn";
+    if (t.remaining <= th + 1 && !slow) return "warn";          // 逼近補貨點
+    return "good";
+  }
+  const STATUS_TEXT = { good: "正常", warn: "快要需補", crit: "需立即補貨", out: "已售罄" };
+
+  // 時間戳 "2026-08-01T18:13:04+0800" → 毫秒
+  function parseTs(s) {
+    const m = String(s || "").match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() : 0;
+  }
+
+  // "2026/08/14 23:59" → Date;用來精算剩餘時間(嘖嘖不到一天時不會顯示「剩餘天數」)
+  function parseEnd(s) {
+    const m = String(s || "").match(/(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})/);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null;
+  }
+  function daysToEnd(endsAt) {
+    const d = parseEnd(endsAt);
+    return d ? (d.getTime() - Date.now()) / 86400000 : null;
+  }
+  function fmtRemainTime(endsAt, daysLeft) {
+    const dd = daysToEnd(endsAt);
+    if (dd == null) return daysLeft != null ? daysLeft + ' <small>天</small>' : "—";
+    if (dd <= 0) return '已結束';
+    if (dd < 1) {
+      const h = Math.floor(dd * 24), mi = Math.round((dd * 24 - h) * 60);
+      return h + ' <small>小時</small> ' + mi + ' <small>分</small>';
+    }
+    return Math.floor(dd) + ' <small>天</small>';
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    // iso like 2026-07-31T16:40:22+0800
+    const m = iso.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    return m ? (m[1] + "/" + m[2] + "/" + m[3] + " " + m[4] + ":" + m[5]) : iso;
+  }
+
+  // 預估售罄。速度來自「已被贊助數的增加」(真實銷量,不受補貨影響),
+  // 由抓取端算好「近 24 小時」與「近 72 小時」的加權平均(24 小時佔 7 成)帶進來。
+  const CONF_TEXT = { high: "可信", mid: "普通", low: "參考值" };
+
+  function etaDaysOf(t) {
+    if (!t.perDay || t.perDay <= 0 || t.remaining == null) return null;
+    return t.remaining / t.perDay;
+  }
+  // 預估的不確定度。實證(2026-08-02,後台 20 個已結束專案)顯示預測誤差 ≈ 1/√樣本量:
+  //   日均 50+ → 16~21% / 日均 10~20 → 26~34% / 日均 <5 → 33~60%
+  // 單一方案通常日均只有 1~6 份,所以誤差本來就有 40~60%。顯示單一數字是假精確,
+  // 所以改成區間,而且區間寬度由該方案自己的樣本量決定。
+  function relErr(soldN) {
+    const n = Math.max(1, soldN || 1);
+    return Math.min(0.6, Math.max(0.2, 1 / Math.sqrt(n)));
+  }
+  const fmtDur = (days) => days < 1
+    ? Math.max(1, Math.round(days * 24)) + " 小時"
+    : (days < 10 ? (Math.round(days * 10) / 10) : Math.round(days)) + " 天";
+
+  function fmtEtaRange(days, soldN) {
+    const r = relErr(soldN);
+    const lo = days * (1 - r), hi = days * (1 + r);
+    // 兩端單位相同就只寫一次(例:「1.2~2.4 天」),不同就各自標(例:「18 小時~1.5 天」)
+    const loIsH = lo < 1, hiIsH = hi < 1;
+    if (loIsH === hiIsH) {
+      const unit = loIsH ? " 小時" : " 天";
+      const f = (d) => loIsH ? Math.max(1, Math.round(d * 24)) : (d < 10 ? Math.round(d * 10) / 10 : Math.round(d));
+      return f(lo) + "~" + f(hi) + unit;
+    }
+    return fmtDur(lo) + "~" + fmtDur(hi);
+  }
+  const fmtEta = (days, soldN) => "約 " + fmtEtaRange(days, soldN) + "後售罄";
+
+  // 等比換算:照近 7 天的速度,到專案結束還會再賣幾份(卡片與表格共用)
+  function projRest(t, endsAt) {
+    const dEnd = daysToEnd(endsAt);
+    if (t.sold7 == null || t.sold7 <= 0 || dEnd == null || dEnd <= 0) return null;
+    return t.sold7 / 7 * dEnd;
+  }
+
+  // 「今天 / 昨天」的標籤必須跟著**資料的日期**走,不能寫死。
+  // 排程只跑 09:00~24:00,所以凌晨打開頁面時最新資料是前一天 23:55 抓的 ——
+  // 那時候標「今天」就是說謊,要改標實際日期(例:「8/2 27 份」)。
+  const TODAY_TIP = "資料當日 00:00 到抓取時刻的累計銷量。排程 09:00 才開始跑," +
+                    "00:00~09:00 的訂單會併入 09:00 那筆。";
+  function dayLabels(cur) {
+    const dk = String(cur.ts || "").slice(0, 10);        // 資料所屬日期 yyyy-mm-dd
+    const n = new Date();
+    const todayKey = n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") +
+                     "-" + String(n.getDate()).padStart(2, "0");
+    if (!dk) return { today: "近日", yday: "前一日" };
+    if (dk === todayKey) return { today: "今天", yday: "昨天" };
+    const md = (off) => {
+      const d = new Date(+dk.slice(0, 4), +dk.slice(5, 7) - 1, +dk.slice(8, 10) - off);
+      return (d.getMonth() + 1) + "/" + d.getDate();
+    };
+    return { today: md(0), yday: md(1) };
+  }
+
+  // 事實列:直接呈現「今天 / 昨天 / 近 7 天實際賣幾份」,不做預測。
+  // 「今天/昨天」是最能反映當下的:近 7 天平均會把今天的爆量或停滯稀釋掉。
+  // (近 14 天只留在表格 —— 卡片上它幾乎不改變決策,佔位而已。)
+  function factsLine(t, cur) {
+    const bits = [];
+    const lab = dayLabels(cur);
+    if (t.soldToday != null) {
+      bits.push('<span class="facts-today" title="' + esc(TODAY_TIP) + '">' + lab.today +
+                ' <b>' + t.soldToday + '</b></span>');
+    }
+    if (t.soldYday != null) bits.push(lab.yday + " <b>" + t.soldYday + "</b>");
+    if (t.sold7 != null) bits.push("近 7 天 <b>" + t.sold7 + "</b>");
+    if (!bits.length) {
+      const w = t.soldWindowH || 0;
+      if (w < 1) return '<div class="facts"><span class="facts-wait">銷售資料累積中</span></div>';
+      bits.push("近 " + (w >= 24 ? Math.round(w / 24) + " 天" : Math.round(w) + " 小時") +
+                " <b>" + (t.sold == null ? "—" : t.sold) + "</b>");
+    }
+    // 「還有 N 天」不放在卡片上 —— 那是專案層級資訊,上方「剩餘時間」已經有了,
+    // 每張卡片重複一次只是雜訊。
+    let proj = "";
+    // 等比換算只在「可能吃掉一半以上庫存」時才顯示。剩 12 份卻只會再賣 1 份的情況
+    // 顯示出來沒有決策價值,只是佔位。
+    const n = projRest(t, cur.endsAt);
+    if (n != null && t.remaining != null && n >= t.remaining * 0.5) {
+      proj = '<div class="facts-proj">照這速度到結束約再賣 <b>' +
+             (n < 1 ? "不到 1" : Math.round(n)) + '</b> 份</div>';
+    }
+    return '<div class="facts">' + bits.join('<span class="facts-sep">·</span>') +
+           '<span class="facts-k">份</span></div>' + proj;
+  }
+
+  function etaLine(t, endsAt) {
+    const w = t.soldWindowH || 0;
+    const winTxt = w >= 24 ? Math.round(w / 24 * 10) / 10 + " 天" : Math.round(w) + " 小時";
+    const conf = (t.conf && CONF_TEXT[t.conf])
+      ? '<span class="conf conf-' + t.conf + '">' + CONF_TEXT[t.conf] + '</span>' : "";
+    const dEnd = daysToEnd(endsAt);
+    const eta = etaDaysOf(t);
+
+    // 完全沒有依據:剛加入追蹤,或這個方案從來沒人贊助。
+    // 這種情況**不可以**說「撐得到結束」—— 那是沒有訊號,不是正面結論。
+    if (!t.basis || eta == null) {
+      if (w < 1) return '<div class="eta"><span class="eta-wait">銷速累積中</span></div>';
+      return '<div class="eta"><span class="eta-wait">無從判斷</span><span class="eta-sep">·</span>' +
+             '<span class="eta-vel">' + (t.backed ? "近 " + winTxt + "無售出,樣本不足" : "尚無人贊助") + '</span></div>';
+    }
+
+    // 依據來源要講清楚,不然「約 10 天售罄」看起來會像精確測量
+    const basisTxt = t.basis === "life"
+      ? "上線至今均速 " + t.perDay + " 份/日"
+      : "近 " + winTxt + "賣 " + (t.sold == null ? "—" : t.sold) + " 份";
+    const velTxt = '<span class="eta-vel">' + basisTxt + '</span>';
+    const note = t.basis === "life"
+      ? '<span class="eta-note" title="長期均速通常偏高,因為多數專案的訂單集中在上線初期">偏樂觀</span>'
+      : "";
+
+    if (dEnd != null && eta > dEnd) {
+      return '<div class="eta"><span class="eta-ok">庫存撐得到結束</span><span class="eta-sep">·</span>' +
+             velTxt + conf + note + '</div>';
+    }
+    const cls = eta <= 2 ? "eta-hot" : "eta-warn";
+    return '<div class="eta"><span class="' + cls + '">' + fmtEta(eta, t.soldN) + '</span>' +
+           '<span class="eta-sep">·</span>' + velTxt + conf + note + '</div>';
+  }
+
+  // 建議補貨量 —— 刻意「補到剛好撐過一個補貨週期」,不是補到專案結束。
+  //
+  // 為什麼:庫存維持低水位是策略的一部分 —— 看到「剩 3 份」的人比較會馬上下單。
+  // 若補到能撐到結束(例如一次補 37 份),稀缺感就沒了。
+  // 所以只補「撐過 cover_days(預設半天)」的量,勤補少量。
+  //
+  // 若專案剩餘時間比補貨週期短,就以剩餘時間為準(不補超過賣得完的量)。
+  // 只在「現在就該補」的時候給建議。使用者不會因為「5 天後會賣完」現在就去補,
+  // 他是等庫存掉到 1~2 份才動手。所以平常不顯示,免得變成雜訊。
+  function restockAdvice(t, endsAt, st) {
+    if (t.remaining == null) return null;
+    if (st !== "crit" && st !== "out") return null;
+    const dEnd = daysToEnd(endsAt);
+    if (dEnd == null || dEnd <= 0) return null;
+    // 補回一個「低但不會馬上見底」的水位:補貨點 +2,快銷方案則至少補到撐過一個週期
+    const byRate = (t.perDay && t.perDay > 0)
+      ? Math.ceil(t.perDay * Math.min(COVER_DAYS, dEnd)) : 0;
+    const target = Math.max(th + 2, byRate);
+    const add = target - t.remaining;
+    if (add <= 0) return null;
+    return { target, add, byRate };
+  }
+
+  // 補貨捷徑:按鈕會把「補完後的新限量數」複製到剪貼簿,同時開啟嘖嘖補貨頁,
+  // 你只要貼上再按儲存。
+  // 為什麼不能直接幫你填:儀表板在 github.io、嘖嘖在 zeczec.com,瀏覽器不允許
+  // 跨網域操作對方頁面(這是安全機制,任何網站都做不到)。
+  // 也刻意不代按「儲存」—— 那是改動上線中的專案,應由本人確認。
+  const RESTOCK_STEPS = [2, 3, 5, 10];
+
+  // 按鈕本體(卡片與表格共用,級距只有這一份,不會兩邊不一致)
+  function restockBtns(t, url, adv) {
+    // 按鈕上直接標出「會複製的絕對值」。
+    // 我們的限量是推算的,可能比真實值低(同一個抓取間隔內又補又賣會互相抵銷)。
+    // 貼一個比真實限量小的數字進去 = 調降限量,嘖嘖那頁自己警告會導致訂單無法成立。
+    // 所以要讓使用者貼之前能跟頁面上預填的數字對照一眼。
+    const mk = (n, label, cls) =>
+      '<button class="rbtn ' + (cls || "") + '" type="button" data-url="' + esc(url) +
+      '" data-new="' + (t.limit + n) + '" data-add="' + n + '"' +
+      ' title="會複製 ' + (t.limit + n) + '(目前限量 ' + t.limit + ' + ' + n + ')。' +
+      '嘖嘖那頁預填的數字若比 ' + t.limit + ' 大,代表這裡的限量已經過期,先別貼。">' +
+      label + '</button>';
+    let btns = RESTOCK_STEPS.map(n => mk(n, "補 " + n)).join("");
+    // 建議量若不在固定級距裡,額外給一顆
+    if (adv && adv.add > 0 && !RESTOCK_STEPS.includes(adv.add)) {
+      btns += mk(adv.add, "補 " + adv.add + "（建議）", "rbtn-suggest");
+    }
+    return btns;
+  }
+
+  function restockRow(t, url, adv) {
+    if (!url) return "";
+    if (t.limit == null) {
+      return '<div class="restock"><a class="editlink" href="' + esc(url) + '" target="_blank" rel="noopener">開啟補貨頁 →</a></div>';
+    }
+    return '<div class="restock"><span class="rlab">補</span>' + restockBtns(t, url, adv) +
+      '<a class="editlink" href="' + esc(url) + '" target="_blank" rel="noopener" title="開啟嘖嘖補貨頁自行輸入">自訂</a></div>';
+  }
+
+  // 「先別吵我」開關(卡片與表格共用)
+  function quietBtn(id, quiet) {
+    const tip = quiet
+      ? "目前只在剩 " + ALWAYS_AT + " 份時才提醒。點一下恢復正常提醒"
+      : "點一下:這個方案只在剩 " + ALWAYS_AT + " 份時才提醒";
+    return '<button class="qbtn' + (quiet ? " on" : "") + '" type="button" data-quiet="' + esc(id) +
+      '" title="' + esc(tip) + '" aria-pressed="' + (quiet ? "true" : "false") +
+      '" aria-label="' + esc(tip) + '">' + (quiet ? "🔕" : "🔔") + '</button>';
+  }
+
+  function restockUrlOf(cfg, t) {
+    return t.reward_id
+      ? ("https://www.zeczec.com/projects/" + cfg.slug + "/options/" + t.reward_id + "/edit_limit")
+      : (cfg.editUrl || null);
+  }
+
+  // ==== 表格檢視 ====
+  // 為什麼要有:卡片一張佔六行,方案多的時候看不出「誰賣得快」。表格一列一個方案,
+  // 同一欄的數字上下對齊就能直接比,而且可以點欄位標題排序。
+  //
+  // 欄位刻意**不另立一套開關** —— 沿用「顯示內容」的勾選(每欄的 when),
+  // 這樣卡片與表格呈現的資訊永遠一致,不會出現「表格看得到、卡片看不到」的落差。
+  // 要加欄位只要在 TABLE_COLS 加一筆(和 DISPLAY_OPTIONS 同樣的做法)。
+  //
+  //   id / label:欄位代號與標題      when(c):回 false 就整欄不出現
+  //   sort(r):排序用的值(給 null 代表這欄不能排序)   desc:預設由大到小
+  //   td(r, c):儲存格內容            cls:額外的 class(手機隱藏、對齊用)
+  const URG_ORDER = { out: 0, crit: 1, warn: 2, good: 3, ended: 4 };
+
+  const TABLE_COLS = [
+    // 方案名稱放第一欄:它是這一列的身份,手機橫向滑動時會固定在左邊(見 CSS 的 sticky)
+    { id: "title", label: "方案", cls: "c-title", sort: r => r.t.title,
+      td: r => '<div class="t-title">' + esc(r.t.title) + '</div>' +
+               '<div class="t-price">NT$ ' + nf(r.t.price) + '</div>' },
+
+    { id: "st", label: "狀態", cls: "c-st", sort: r => URG_ORDER[r.st],
+      td: r => r.st === "ended" ? '<span class="t-dim">—</span>'
+        : (r.st === "good" ? '<span class="t-dim">正常</span>'
+            : '<span class="pill s-' + r.st + '">' + STATUS_TEXT[r.st] + '</span>')
+          + quietBtn(r.qid, r.quiet) },
+
+    { id: "remaining", label: "剩餘", cls: "r", sort: r => r.t.remaining == null ? Infinity : r.t.remaining,
+      td: r => '<span class="t-remain' + (r.st === "ended" ? "" : " s-" + r.st) + '">' +
+               (r.t.remaining == null ? "—" : r.t.remaining) + '</span>' },
+
+    { id: "limit", label: "限量", cls: "r c-limit", when: () => showing("progress"),
+      sort: r => r.t.limit == null ? Infinity : r.t.limit,
+      td: r => nf(r.t.limit) },
+
+    { id: "backed", label: "已賣", cls: "r", desc: true, when: () => showing("progress"),
+      sort: r => r.t.backed == null ? -1 : r.t.backed,
+      td: r => nf(r.t.backed) +
+        (r.t.limit ? ' <span class="t-dim">' + Math.round(r.t.backed / r.t.limit * 100) + '%</span>' : "") },
+
+    // 「誰賣得快」的主欄位。維持與卡片相同的原則:攤開事實,不做預測。
+    // 今天/昨天放在近 7 天前面 —— 由近而遠,而且「今天」才是決定現在要不要補的依據。
+    { id: "soldToday", label: "今天", cls: "r", desc: true, when: () => showing("facts"),
+      head: c => dayLabels(c.cur).today, headTip: () => TODAY_TIP,
+      sort: r => r.t.soldToday == null ? -1 : r.t.soldToday,
+      td: r => r.t.soldToday == null ? '<span class="t-dim">—</span>'
+        : r.t.soldToday === 0 ? '<span class="t-dim">0</span>'
+        : '<span class="t-b t-now">' + r.t.soldToday + '</span>' },
+
+    { id: "soldYday", label: "昨天", cls: "r", desc: true, when: () => showing("facts"),
+      head: c => dayLabels(c.cur).yday,
+      sort: r => r.t.soldYday == null ? -1 : r.t.soldYday,
+      td: r => r.t.soldYday == null ? '<span class="t-dim">—</span>' : String(r.t.soldYday) },
+
+    { id: "sold7", label: "近 7 天", cls: "r", desc: true, when: () => showing("facts"),
+      sort: r => r.t.sold7 == null ? -1 : r.t.sold7,
+      td: r => r.t.sold7 == null ? '<span class="t-dim">—</span>' : '<span class="t-b">' + r.t.sold7 + '</span>' },
+
+    { id: "sold14", label: "近 14 天", cls: "r", desc: true, when: () => showing("facts"),
+      sort: r => r.t.sold14 == null ? -1 : r.t.sold14,
+      td: r => r.t.sold14 == null ? '<span class="t-dim">—</span>' : String(r.t.sold14) },
+
+    // 等比換算(和卡片的 facts-proj 同一個算法)。可能吃掉一半以上庫存時才標成警示色。
+    { id: "proj", label: "到結束約", cls: "r", desc: true,
+      when: c => showing("facts") && !c.ended,
+      sort: r => r.proj == null ? -1 : r.proj,
+      td: r => {
+        if (r.proj == null) return '<span class="t-dim">—</span>';
+        const txt = r.proj < 1 ? "不到 1" : Math.round(r.proj);
+        const hot = r.t.remaining != null && r.proj >= r.t.remaining * 0.5;
+        return '<span class="' + (hot ? "t-hot" : "") + '">' + txt + '</span>';
+      } },
+
+    { id: "eta", label: "預估售罄", sort: r => r.eta == null ? Infinity : r.eta,
+      when: c => showing("eta") && !c.ended,
+      td: (r, c) => {
+        // 沒有依據時絕不能寫成「撐得到結束」—— 那是肯定結論,實際只是算不出來
+        if (!r.t.basis || r.eta == null) return '<span class="eta-wait">無從判斷</span>';
+        const dEnd = c.dEnd;
+        if (dEnd != null && r.eta > dEnd) return '<span class="eta-ok">撐得到結束</span>';
+        return '<span class="' + (r.eta <= 2 ? "eta-hot" : "eta-warn") + '">' +
+               fmtEtaRange(r.eta, r.t.soldN) + '</span>' +
+               (r.t.basis === "life" ? ' <span class="eta-note" title="長期均速通常偏高">偏樂觀</span>' : "");
+      } },
+
+    { id: "advice", label: "建議補", cls: "r", desc: true,
+      when: c => showing("advice") && !c.ended,
+      sort: r => r.adv ? r.adv.add : -1,
+      td: r => r.adv
+        ? '<span class="t-add" title="補到 ' + r.adv.target + ' 份">+' + r.adv.add + '</span>'
+        : '<span class="t-dim">—</span>' },
+
+    { id: "restock", label: "補貨", cls: "c-rest", sort: null,
+      when: c => showing("restock") && !c.ended,
+      td: r => !r.url ? '<span class="t-dim">—</span>'
+        : r.t.limit == null
+          ? '<a class="editlink" href="' + esc(r.url) + '" target="_blank" rel="noopener">補貨頁 →</a>'
+          : '<div class="restock">' + restockBtns(r.t, r.url, r.adv) + '</div>' },
+  ];
+
+  // 排序狀態(記在瀏覽器,下次打開還是同一種排法)。sortBy 為 null = 依急迫度(與卡片相同)
+  const SORT_KEY = "sku-tracker.sort";
+  let sortBy = null, sortDesc = false;
+  (function loadSort() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SORT_KEY) || "null");
+      if (raw && TABLE_COLS.some(c => c.id === raw.by && c.sort !== null)) {
+        sortBy = raw.by; sortDesc = !!raw.desc;
+      }
+    } catch (e) {}
+  })();
+  function persistSort() {
+    try {
+      if (sortBy) localStorage.setItem(SORT_KEY, JSON.stringify({ by: sortBy, desc: sortDesc }));
+      else localStorage.removeItem(SORT_KEY);
+    } catch (e) {}
+  }
+
+  const ARW = { asc: "▲", desc: "▼" };
+
+  function tableHtml(tiers, c) {
+    const cols = TABLE_COLS.filter(col => !col.when || col.when(c));
+    // 每列先算好共用的衍生值,欄位定義就只負責呈現
+    let rows = tiers.map(t => {
+      const st = c.ended ? "ended" : statusOf(t, c.dEnd, isQuiet(c.cfg, t));
+      return {
+        t, st, quiet: isQuiet(c.cfg, t), qid: quietIdOf(c.cfg, t),
+        eta: etaDaysOf(t),
+        proj: projRest(t, c.cur.endsAt),
+        adv: c.ended ? null : restockAdvice(t, c.cur.endsAt, st),
+        url: c.ended ? null : restockUrlOf(c.cfg, t),
+      };
+    });
+    const col = sortBy ? cols.find(x => x.id === sortBy) : null;
+    if (col && col.sort) {
+      // 已經是依急迫度排好的順序,穩定排序讓同值的列維持該次序
+      rows = rows.map((r, i) => [r, i]).sort((a, b) => {
+        const va = col.sort(a[0]), vb = col.sort(b[0]);
+        let d = typeof va === "string" ? va.localeCompare(vb, "zh-Hant") : va - vb;
+        if (!d) return a[1] - b[1];
+        return sortDesc ? -d : d;
+      }).map(x => x[0]);
+    }
+    const head = cols.map(x => {
+      const sortable = x.sort !== null;
+      const on = sortBy === x.id;
+      // head(c) 讓標題可以跟著資料變(「今天/昨天」在凌晨要改標成實際日期)
+      const label = x.head ? x.head(c) : x.label;
+      const tip = x.headTip ? x.headTip(c) : null;
+      return '<th class="' + (x.cls || "") + (sortable ? " sortable" : "") + '"' +
+        (sortable ? ' data-col="' + x.id + '" tabindex="0" role="button"' : "") +
+        (tip ? ' title="' + esc(tip) + '"' : "") +
+        (on ? ' aria-sort="' + (sortDesc ? "descending" : "ascending") + '"' : "") + '>' +
+        esc(label) + (on ? ' <span class="arw">' + ARW[sortDesc ? "desc" : "asc"] + '</span>' : "") + '</th>';
+    }).join("");
+    const body = rows.map(r =>
+      '<tr class="s-' + r.st + '">' +
+      cols.map(x => '<td class="' + (x.cls || "") + '">' + x.td(r, c) + '</td>').join("") +
+      '</tr>').join("");
+    return '<div class="tablewrap"><table class="tv"><thead><tr>' + head +
+           '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+
+  function renderProject(cfg) {
+    const p = DATA[cfg.slug];
+    if (!p || !p.snapshots || !p.snapshots.length) {
+      return '<p style="color:var(--muted)">「' + esc(cfg.name) + '」尚無資料。</p>';
+    }
+    const snaps = p.snapshots;
+    const cur = snaps[snaps.length - 1];
+    // 依急迫度排序:已售罄(正在流失訂單)最前,其次是預估最快售罄的,再其次是庫存最少的。
+    // 單純用剩餘份數排會誤導 —— 剩 5 份但一天賣 4 份,比剩 3 份沒人買急迫得多。
+    const rank = (t) => {
+      if (t.remaining === 0) return [0, 0, 0];
+      return [1, t.etaDays == null ? Infinity : t.etaDays, t.remaining == null ? 9999 : t.remaining];
+    };
+    const tiers = (cur.tiers || []).slice().sort((a, b) => {
+      const ra = rank(a), rb = rank(b);
+      for (let i = 0; i < 3; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+      return 0;
+    });
+
+    const dEndProj = daysToEnd(cur.endsAt);
+    const ended = dEndProj != null && dEndProj <= 0;
+    const outCount = ended ? 0 : tiers.filter(t => t.remaining === 0).length;
+    const critCount = ended ? 0 : tiers.filter(t => statusOf(t, dEndProj, isQuiet(cfg, t)) === "crit").length;
+
+    // 只在真的有事時才出橫幅。全部正常時總覽列已經寫「0 個告急」,不需要再佔一整行綠色。
+    let banner = "";
+    if (outCount || critCount) {
+      const parts = [];
+      if (critCount) parts.push(critCount + " 個方案需立即補貨");
+      if (outCount) parts.push(outCount + " 個方案已售罄");
+      banner = '<div class="banner crit"><span class="dot"></span>' +
+        '需要注意：' + parts.join("、") + '。點方案的補貨按鈕到嘖嘖後台調整。</div>';
+    }
+
+    // summary stats
+    const pct = cur.goal ? Math.round((cur.raised / cur.goal) * 100) : null;
+    const summary =
+      '<div class="summary">' +
+      stat("剩餘時間", fmtRemainTime(cur.endsAt, cur.daysLeft), cur.endsAt ? "至 " + cur.endsAt : null) +
+      (showing("funding")
+        ? stat("累計集資", 'NT$ ' + nf(cur.raised) + (pct != null ? ' <small>' + pct + '%</small>' : "")) +
+          stat("贊助人數", nf(cur.backers) + ' <small>人</small>')
+        : "") +
+      '</div>';
+
+    // 卡片檢視(表格檢視時不會被呼叫)
+    const cardsHtml = () => tiers.map(t => {
+      const soldPct = (t.limit ? Math.round((t.backed / t.limit) * 100) : 0);
+      // 已結束的專案:預估、建議補貨、補貨按鈕全都沒有意義了 —— 只呈現最終結果。
+      const quiet = isQuiet(cfg, t);
+      const st = ended ? "ended" : statusOf(t, dEndProj, quiet);
+      const facts = ended
+        ? '<div class="facts"><span class="eta-final">結束時剩 ' + (t.remaining == null ? "—" : t.remaining) + ' 份</span></div>'
+        : (showing("facts") ? factsLine(t, cur) : "");
+      const eta = (ended || !showing("eta")) ? "" : etaLine(t, cur.endsAt);
+      const adv = ended ? null : restockAdvice(t, cur.endsAt, st);
+      const advice = (adv && showing("advice"))
+        ? '<div class="advice">建議補 <b>' + adv.add + '</b> 份' +
+          '<span class="advice-why">補到 ' + adv.target + ' 份' +
+          (adv.byRate > th + 2 ? '(依銷速需求)' : '') + '</span></div>'
+        : "";
+      const restockUrl = ended ? null : restockUrlOf(cfg, t);
+      // 狀態標籤只在異常時出現 —— 「正常」佔位卻不帶資訊,反而讓真正該注意的不顯眼
+      const pill = (st === "good" || st === "ended") ? ""
+        : '<span class="pill s-' + st + '">' + STATUS_TEXT[st] + '</span>';
+      const numCls = st === "ended" ? "" : " s-" + st;
+      // 進度條 + 已賣數量併成一行。原本「限量」在大數字那行印過、這裡又印一次,
+      // 而已被贊助數也能從 限量−剩餘 推出來,所以只留最精簡的表述。
+      const progress = showing("progress")
+        ? '<div class="meter"><i style="width:' + soldPct + '%"></i></div>' +
+          '<div class="meta-row"><span class="num">已賣 ' + nf(t.backed) + '</span>' +
+          '<span class="num pctc">' + soldPct + '%</span></div>'
+        : "";
+      return '<article class="card s-' + st + '" tabindex="0">' +
+        '<div class="card-head"><div><h3>' + esc(t.title) + '</h3>' +
+        '<div class="price num">NT$ ' + nf(t.price) + '</div></div>' +
+        '<div class="head-right">' + pill + (ended ? "" : quietBtn(quietIdOf(cfg, t), quiet)) + '</div></div>' +
+        '<div class="bignum"><span class="n num' + numCls + '">' + (t.remaining == null ? "—" : t.remaining) + '</span>' +
+        '<span class="lab">份剩餘 / 限量 ' + nf(t.limit) + '</span></div>' +
+        progress + facts + eta + advice +
+        (showing("restock") ? restockRow(t, restockUrl, adv) : "") +
+        '</article>';
+    }).join("");
+
+    // 各專案的抓取時間只差幾秒,逐案顯示是重複資訊。
+    // 但若某案明顯落後(該次抓取失敗),那就必須講出來,否則會看著過期數字做決定。
+    // 已結束的專案資料本來就會停在結束時刻,那是正確的,不能報成抓取失敗。
+    const lag = (newestTs - parseTs(cur.ts)) / 60000;
+    const staleNote = (!ended && lag > 15)
+      ? '<span class="stale-warn">⚠ 此專案資料停在 ' + fmtDate(cur.ts) + '（比其他案舊 ' + Math.round(lag) + ' 分鐘，可能抓取失敗）</span>'
+      : (ended ? '<span class="ended-note">已結束於 ' + (cur.endsAt || fmtDate(cur.ts)) + '</span>' : "");
+    const isTable = view === "table";
+    const sortedCol = sortBy ? TABLE_COLS.find(x => x.id === sortBy) : null;
+    const orderNote = !isTable ? "最快售罄的排前面"
+      : sortedCol ? "依「" + sortedCol.label + "」" + (sortDesc ? "由大到小" : "由小到大") + "・點標題可換"
+      : "最快售罄的排前面・點欄位標題可排序";
+    return '<header class="top"><h1>' + esc(cfg.name) + '</h1>' + staleNote + '</header>' +
+      banner + summary +
+      '<div class="section-label"><h2>各方案剩餘庫存</h2><span>共 ' + tiers.length +
+      ' 個限量方案・' + orderNote + '</span><span class="rule"></span></div>' +
+      (isTable
+        ? tableHtml(tiers, { cfg, cur, dEnd: dEndProj, ended })
+        : '<div class="grid">' + cardsHtml() + '</div>');
+  }
+
+  function stat(k, v, sub) {
+    return '<div class="stat"><div class="k">' + esc(k) + '</div><div class="v num">' + v + '</div>' +
+      (sub ? '<div class="sub num">' + esc(sub) + '</div>' : '') + '</div>';
+  }
+
+  // 資料有多舊 —— 讓「刷新」這個動作有意義:按了以後看得出到底有沒有變新
+  function ageInfo() {
+    const m = String(GENERATED_AT).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+    if (!m) return { text: "", cls: "" };
+    const t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    const mins = Math.max(0, Math.round((Date.now() - t.getTime()) / 60000));
+    if (mins < 1) return { text: "剛剛更新", cls: "fresh" };
+    if (mins < 60) return { text: mins + " 分鐘前更新", cls: mins <= 35 ? "fresh" : "stale" };
+    const h = Math.floor(mins / 60);
+    if (h < 24) return { text: h + " 小時前更新", cls: "stale" };
+    return { text: Math.floor(h / 24) + " 天前更新", cls: "stale" };
+  }
+
+  const REFRESH_ICON =
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+
+  function topbar() {
+    const a = ageInfo();
+    return '<div class="topbar">' +
+      '<h1>SKU 剩餘庫存</h1><div class="spacer"></div>' +
+      '<div class="freshness"><span class="age ' + a.cls + '">' + a.text + '</span>' +
+      '<span>資料時間 ' + fmtDate(GENERATED_AT) + '</span></div>' +
+      '<button class="refresh" id="btnRefresh" type="button" title="重新載入最新已發佈的資料">' +
+      REFRESH_ICON + '<span>刷新</span></button></div>';
+  }
+
+  function showToast(text) {
+    const el = document.createElement("div");
+    el.className = "toast-msg";
+    el.setAttribute("role", "status");
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 4200);
+  }
+
+  // 刷新 = 重新讀 data.json(帶時間戳並要求不快取,確保拿到最新)。
+  // 注意:這是「取得最新已發佈的資料」。靜態頁面無法叫你的電腦當場去嘖嘖重抓 ——
+  // 真正的抓取由本機排程每 5 分鐘執行。
+  function wireRefresh() {
+    const btn = document.getElementById("btnRefresh");
+    if (!btn) return;
+    btn.addEventListener("click", async () => {
+      btn.classList.add("spinning");
+      btn.disabled = true;
+      const before = GENERATED_AT;
+      try {
+        const changed = await loadData();
+        render();
+        showToast(changed || GENERATED_AT !== before
+          ? "已更新到 " + fmtDate(GENERATED_AT)
+          : "已是最新資料(" + ageInfo().text + ")");
+      } catch (e) {
+        showToast("讀取失敗,請檢查網路連線");
+      } finally {
+        const b = document.getElementById("btnRefresh");
+        if (b) { b.classList.remove("spinning"); b.disabled = false; }
+      }
+    });
+  }
+
+  // 有資料的追蹤專案(每次載入新資料後要重算)
+  let tracked = [];
+  let newestTs = 0;   // 所有專案中最新的抓取時間 —— 用來判斷某案是否落後(該次抓取失敗)
+  let PEOPLE = [];
+  function recompute() {
+    tracked = (CONFIG.projects || []).filter(p => p.track && DATA[p.slug] && DATA[p.slug].snapshots?.length);
+    newestTs = tracked.reduce((mx, p) => {
+      const s = DATA[p.slug].snapshots;
+      return Math.max(mx, parseTs(s[s.length - 1].ts));
+    }, 0);
+    PEOPLE = (CONFIG.people || []).filter(p => p.id && p.name);
+    th = (CONFIG.alert && CONFIG.alert.remaining_threshold != null) ? CONFIG.alert.remaining_threshold : 2;
+    COVER_DAYS = (CONFIG.restock && CONFIG.restock.cover_days) ? CONFIG.restock.cover_days : 0.5;
+    SLOW_DAYS  = (CONFIG.restock && CONFIG.restock.slow_exempt_days != null) ? CONFIG.restock.slow_exempt_days : 3;
+    ALWAYS_AT  = (CONFIG.restock && CONFIG.restock.always_urgent_at != null) ? CONFIG.restock.always_urgent_at : 1;
+  }
+
+  // ---- 要顯示哪些專案 ----
+  // 優先順序:網址 ?p=slug,slug → 上次的選擇(存在瀏覽器) → 全部。
+  // 每個人用自己的瀏覽器記住自己要看的案子;想分享特定組合就把網址複製給對方。
+  const STORE_KEY = "sku-tracker.selected";
+  const PERSON_KEY = "sku-tracker.person";
+
+  // ---- 顯示選項 ----
+  // 要加新的顯示項目,只要在這個陣列加一筆,勾選器與儲存都會自動生效。
+  const DISPLAY_OPTIONS = [
+    { id: "facts",    label: "銷售明細",   def: true,  hint: "近 7 天 / 近 14 天實際賣幾份" },
+    { id: "eta",      label: "預估售罄",   def: false, hint: "換算成天數的推估。稀疏資料誤差可達 40~60%,預設關閉" },
+    { id: "advice",   label: "建議補貨量", def: true,  hint: "只在需立即補貨時出現" },
+    { id: "restock",  label: "補貨按鈕",   def: true,  hint: "複製新限量數並開啟嘖嘖補貨頁" },
+    { id: "progress", label: "售出進度條", def: true,  hint: "已被贊助 / 限量" },
+    { id: "funding",  label: "專案集資數據", def: true, hint: "累計集資與贊助人數" },
+  ];
+  // ---- 卡片 / 表格 ----
+  // 卡片一張佔六行,方案多時看不出「誰賣得快」;表格一列一個方案,同一欄上下對齊可直接比較。
+  // 兩種檢視共用「顯示內容」的勾選(見 TABLE_COLS 的 when),不會兩邊資訊不一致。
+  const VIEW_KEY = "sku-tracker.view";
+  const VIEWS = [
+    { id: "cards", label: "卡片", hint: "一個方案一張卡,資訊完整" },
+    { id: "table", label: "表格", hint: "一個方案一列,可點標題排序、橫向比較" },
+  ];
+  let view = "cards";
+  (function loadView() {
+    try {
+      const v = localStorage.getItem(VIEW_KEY);
+      if (VIEWS.some(x => x.id === v)) view = v;
+    } catch (e) {}
+  })();
+
+  const OPT_KEY = "sku-tracker.display";
+  let shown = new Set(DISPLAY_OPTIONS.filter(o => o.def).map(o => o.id));
+  (function loadOpts() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(OPT_KEY) || "null");
+      if (Array.isArray(raw)) shown = new Set(raw.filter(id => DISPLAY_OPTIONS.some(o => o.id === id)));
+    } catch (e) {}
+  })();
+  const showing = (id) => shown.has(id);
+  function persistOpts() {
+    try { localStorage.setItem(OPT_KEY, JSON.stringify([...shown])); } catch (e) {}
+  }
+  const findPerson = (id) => PEOPLE.find(p => p.id === id) || null;
+  const CUSTOM_KEY = (id) => "sku-tracker.custom." + id;
+
+  // 每個人的「自己改過並儲存」的清單(存在這台瀏覽器),沒有就用設定檔的預設
+  function readOverride(id) {
+    try {
+      const raw = JSON.parse(localStorage.getItem(CUSTOM_KEY(id)) || "null");
+      if (Array.isArray(raw)) return raw;
+    } catch (e) {}
+    return null;
+  }
+  const personSet = (p) => {
+    const list = readOverride(p.id) || p.projects || [];
+    return new Set(tracked.filter(t => list.includes(t.slug)).map(t => t.slug));
+  };
+  const sameSet = (a, b) => a.size === b.size && [...a].every(x => b.has(x));
+
+  const params = new URLSearchParams(location.search);
+  let currentPerson = null;   // 目前套用的是哪個人的預設(自行勾選後會變回 null)
+  let selected;
+
+  function initSelection() {
+    // 優先順序:網址 ?who= → 網址 ?p= → 記住的名字 → 記住的勾選 → 全部
+    const who = params.get("who");
+    if (who) {
+      const p = findPerson(who);
+      if (p) { currentPerson = p.id; selected = personSet(p); return; }
+    }
+    const fromUrl = params.get("p");
+    if (fromUrl !== null) {
+      const wanted = fromUrl.split(",").map(s => s.trim()).filter(Boolean);
+      selected = new Set(tracked.filter(t => wanted.includes(t.slug)).map(t => t.slug));
+      return;
+    }
+    try {
+      const savedWho = localStorage.getItem(PERSON_KEY);
+      const p = savedWho ? findPerson(savedWho) : null;
+      if (p) { currentPerson = p.id; selected = personSet(p); return; }
+      const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+      if (Array.isArray(saved)) {
+        const s = new Set(tracked.filter(t => saved.includes(t.slug)).map(t => t.slug));
+        if (s.size) { selected = s; return; }
+      }
+    } catch (e) { /* 存取被封鎖就用預設值 */ }
+    selected = new Set(tracked.map(t => t.slug));
+  }
+
+  function persist() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify([...selected]));
+      if (currentPerson) localStorage.setItem(PERSON_KEY, currentPerson);
+      else localStorage.removeItem(PERSON_KEY);
+    } catch (e) {}
+    // 網址永遠反映目前畫面,直接複製就能分享
+    let q = "";
+    if (currentPerson) q = "?who=" + encodeURIComponent(currentPerson);
+    else if (selected.size !== tracked.length) q = "?p=" + [...selected].join(",");
+    history.replaceState(null, "", location.pathname + q);
+  }
+
+  const CHECK = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  function peoplebar() {
+    if (!PEOPLE.length || tracked.length < 2) return "";
+    const btns = PEOPLE.map(p => {
+      const on = currentPerson === p.id;
+      const n = personSet(p).size;
+      return '<button class="who" type="button" data-who="' + esc(p.id) + '" aria-pressed="' + on + '">' +
+        esc(p.name) + ' <span class="cnt">' + n + '</span></button>';
+    }).join("");
+    let tail = "";
+    if (currentPerson) {
+      const p = findPerson(currentPerson);
+      const dirty = !sameSet(selected, personSet(p));
+      const hasOverride = !!readOverride(currentPerson);
+      if (dirty) {
+        tail = '<button class="who-save" type="button" id="btnSaveWho" ' +
+               'title="只會存在這台裝置的瀏覽器。想在其他裝置也一樣,請用「複製連結」加書籤。">' +
+               '儲存到這台裝置</button>' +
+               '<span class="who-custom">尚未儲存</span>';
+      } else if (hasOverride) {
+        tail = '<span class="who-custom">已套用你在這台裝置儲存的設定</span>' +
+               '<button class="who-reset" type="button" id="btnResetWho">還原預設</button>';
+      }
+    } else {
+      tail = '<span class="who-custom">自訂勾選中（未指定身份）</span>';
+    }
+    // 「複製連結」永遠顯示 —— 這是唯一真正跨裝置的方式,自訂勾選時同樣需要
+    tail += '<button class="who-link" type="button" id="btnCopyLink" ' +
+            'title="複製目前組合的網址。加書籤後,任何裝置打開都是這個組合。">複製連結</button>';
+    return '<div class="peoplebar"><span class="lab">專案人員</span>' + btns + tail + '</div>';
+  }
+
+  // 顯示選項的勾選列(在「顯示專案」下面),前面帶「卡片 / 表格」切換
+  function optionbar() {
+    const segs = VIEWS.map(v =>
+      '<button class="seg" type="button" data-view="' + v.id + '" ' +
+      'aria-pressed="' + (view === v.id) + '" title="' + esc(v.hint) + '">' +
+      esc(v.label) + '</button>').join("");
+    const chips = DISPLAY_OPTIONS.map(o =>
+      '<button class="chip opt" type="button" data-opt="' + o.id + '" ' +
+      'aria-pressed="' + showing(o.id) + '" title="' + esc(o.hint) + '">' +
+      '<span class="box">' + CHECK + '</span>' + esc(o.label) + '</button>').join("");
+    return '<div class="filterbar optbar"><span class="lab">檢視</span>' +
+      '<span class="seg-group">' + segs + '</span><span class="vdiv"></span>' +
+      '<span class="lab">顯示內容</span>' + chips + '</div>';
+  }
+
+  function filterbar() {
+    if (tracked.length < 2) return "";
+    const chips = tracked.map(p => {
+      const on = selected.has(p.slug);
+      const cur = DATA[p.slug].snapshots[DATA[p.slug].snapshots.length - 1];
+      const n = (cur.tiers || []).length;
+      return '<button class="chip" type="button" data-slug="' + esc(p.slug) + '" aria-pressed="' + on + '">' +
+        '<span class="box">' + CHECK + '</span>' + esc(p.name) +
+        ' <span class="cnt">' + n + '</span></button>';
+    }).join("");
+    const allOn = selected.size === tracked.length;
+    return '<div class="filterbar"><span class="lab">顯示專案</span>' + chips +
+      '<button class="chip-all" type="button" id="btnAll">' + (allOn ? "全部取消" : "全選") + '</button></div>';
+  }
+
+  // 專案的急迫程度:告急方案多的排前面,其次是庫存最少的,再其次是快結束的
+  function urgency(cfg) {
+    const cur = DATA[cfg.slug].snapshots[DATA[cfg.slug].snapshots.length - 1];
+    const tiers = cur.tiers || [];
+    const dEnd = daysToEnd(cur.endsAt);
+    // 與卡片標籤同一套判準(看還能撐多久),避免頁面內部前後矛盾
+    const crit = tiers.filter(t => ["crit", "out"].includes(statusOf(t, dEnd))).length;
+    const minRemain = tiers.reduce((m, t) => Math.min(m, t.remaining == null ? 9999 : t.remaining), 9999);
+    return { crit, minRemain, dEnd: dEnd == null ? 9999 : dEnd, tiers: tiers.length };
+  }
+
+  function overview(show) {
+    if (!show.length) return "";
+    let tiers = 0, crit = 0, out = 0, soonest = null, soonestName = "";
+    // 今天/昨天的全站合計。專案層級的數字由抓取端算好(已依商品分組去重,
+    // 同商品的兩個版本共用一個銷速數字,直接把方案相加會重複計算)。
+    //
+    // ⚠️ 只加總「資料日期 = 最新那個日期」的專案。若某案抓取失敗而定格在昨天,
+    //    把它算進來就會變成「兩個不同日子的數字掛在同一個標籤下」—— 標籤與數字必須一致。
+    const dateOf = (cfg) => {
+      const s = DATA[cfg.slug].snapshots;
+      return String(s[s.length - 1].ts || "").slice(0, 10);
+    };
+    const newestDate = show.reduce((mx, cfg) => { const d = dateOf(cfg); return d > mx ? d : mx; }, "");
+    let today = null, yday = null, dayLab = null;
+    show.forEach(cfg => {
+      const u = urgency(cfg);
+      const cur = DATA[cfg.slug].snapshots[DATA[cfg.slug].snapshots.length - 1];
+      const dEnd = daysToEnd(cur.endsAt);
+      tiers += u.tiers;
+      crit += (cur.tiers || []).filter(t => statusOf(t, dEnd) === "crit").length;
+      out  += (cur.tiers || []).filter(t => t.remaining === 0).length;
+      if (u.dEnd < 9999 && (soonest == null || u.dEnd < soonest)) { soonest = u.dEnd; soonestName = cfg.name; }
+      // 只加總資料日期最新的那些案子(理由見上方註解)
+      if (dateOf(cfg) === newestDate) {
+        if (cur.soldToday != null) { today = (today ?? 0) + cur.soldToday; dayLab = dayLab || dayLabels(cur); }
+        if (cur.soldYday != null) yday = (yday ?? 0) + cur.soldYday;
+      }
+    });
+    const bits = [
+      '<b>' + show.length + '</b> 案',
+      '<b>' + tiers + '</b> 個方案',
+      (crit + out) > 0
+        ? '<b class="hot">' + (crit + out) + '</b> 個告急'
+        : '<b class="ok">0</b> 個告急',
+    ];
+    // 「今天賣了幾份」放在總覽列 —— 一個數字,不佔額外空間,一打開就知道今天的動能
+    if (today != null) {
+      bits.push('<span title="' + esc(TODAY_TIP) + '">' + dayLab.today + ' <b>' + today + '</b> 份' +
+        (yday != null ? '<span class="ov-cmp">' + dayLab.yday + ' ' + yday + '</span>' : "") + '</span>');
+    }
+    if (soonest != null) {
+      const s = soonest <= 0 ? "已結束"
+        : soonest < 1 ? Math.floor(soonest * 24) + " 小時後結束"
+        : Math.floor(soonest) + " 天後結束";
+      bits.push('最快 <b' + (soonest < 2 ? ' class="hot"' : '') + '>' + esc(soonestName) + ' ' + s + '</b>');
+    }
+    return '<div class="overview">' + bits.join('<span class="sep">·</span>') + '</div>';
+  }
+
+  const isEnded = (cfg) => {
+    const cur = DATA[cfg.slug].snapshots[DATA[cfg.slug].snapshots.length - 1];
+    const d = daysToEnd(cur.endsAt);
+    return d != null && d <= 0;
+  };
+
+  function contentHtml() {
+    const all = tracked.filter(p => selected.has(p.slug)).sort((a, b) => {
+      const ua = urgency(a), ub = urgency(b);
+      if (ub.crit !== ua.crit) return ub.crit - ua.crit;       // 告急多的在前
+      if (ua.minRemain !== ub.minRemain) return ua.minRemain - ub.minRemain; // 庫存少的在前
+      return ua.dEnd - ub.dEnd;                                 // 快結束的在前
+    });
+    if (!all.length) {
+      return '<div class="empty-note">目前沒有勾選任何專案。點上面的專案名稱就會顯示。</div>';
+    }
+    // 已結束的專案直接不顯示 —— 留著只是佔版面,真要回頭看把 config 的 track 改回 true 就好
+    const live = all.filter(p => !isEnded(p));
+    if (!live.length) {
+      return '<div class="empty-note">追蹤中的專案都已結束。</div>';
+    }
+    return overview(live) + live.map(renderProject).join('<div style="height:40px"></div>');
+  }
+
+  // ⚠️ 必須是函式:寫成 const 字串會在載入時就求值,那時 GENERATED_AT 還是空的
+  //    (資料是之後才 fetch 進來的),頁尾會永遠印「產生時間 —」。
+  const FOOT = () =>
+    '<div class="foot">資料來源：嘖嘖公開專案頁。本機排程每 5 分鐘抓一次（電腦開機時)，' +
+    '數字有變化就立刻更新此頁；即使完全沒變化，每小時的<b>整點與 30 分</b>也一定會更新時間，' +
+    '所以上面的時間若跳過了整點或 30 分，就表示排程沒在跑。<br>' +
+    '「刷新」會取得最新已發佈的資料；網頁本身無法即時重抓嘖嘖，實際抓取由排程執行。<br>' +
+    '檢視方式、顯示內容、排序與勾選都只改變你自己看到的畫面（記在這台瀏覽器），' +
+    '不影響別人，也不會停止抓取。<br>' +
+    '產生時間 ' + fmtDate(GENERATED_AT) + '。</div>';
+
+  const app = document.getElementById("app");
+
+  function render() {
+    if (!tracked.length) {
+      app.innerHTML = topbar() +
+        '<p style="color:var(--muted)">目前沒有追蹤中的專案。到 config.json 把想追蹤的專案 track 設為 true。</p>';
+      wireRefresh();
+      return;
+    }
+    app.innerHTML = topbar() + peoplebar() + filterbar() + optionbar() + contentHtml() + FOOT();
+    wireRefresh();
+    // 顯示選項
+    app.querySelectorAll(".chip.opt").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.opt;
+        if (shown.has(id)) shown.delete(id); else shown.add(id);
+        persistOpts();
+        render();
+      });
+    });
+    // 卡片 / 表格
+    app.querySelectorAll(".seg[data-view]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        view = btn.dataset.view;
+        try { localStorage.setItem(VIEW_KEY, view); } catch (e) {}
+        render();
+      });
+    });
+    // 表格排序:點一下由小到大,再點反向,第三下回到「依急迫度」的預設排序
+    app.querySelectorAll("th.sortable").forEach(th => {
+      const act = () => {
+        const id = th.dataset.col;
+        const col = TABLE_COLS.find(x => x.id === id);
+        if (sortBy !== id) { sortBy = id; sortDesc = !!(col && col.desc); }
+        else if (sortDesc === !!(col && col.desc)) { sortDesc = !sortDesc; }
+        else { sortBy = null; sortDesc = false; }
+        persistSort();
+        render();
+      };
+      th.addEventListener("click", act);
+      th.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); }
+      });
+    });
+    // 點名字 → 套用那個人的案子(再點一次取消,回到全部)
+    app.querySelectorAll(".who").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.who;
+        if (currentPerson === id) {
+          currentPerson = null;
+          selected = new Set(tracked.map(p => p.slug));
+        } else {
+          const p = findPerson(id);
+          if (!p) return;
+          currentPerson = id;
+          selected = personSet(p);
+        }
+        persist();
+        render();
+      });
+    });
+    // 勾選。若已選身份就保持在該身份底下編輯(出現「儲存」按鈕),不會被踢回無身份狀態
+    // ⚠️ 一定要限定 [data-slug] —— 顯示選項的按鈕 class 是 "chip opt",光用 .chip 會一起選到,
+    //    造成點一次顯示選項就把 undefined 加進 selected(網址會多出一個空 slug)
+    app.querySelectorAll(".chip[data-slug]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const slug = btn.dataset.slug;
+        if (selected.has(slug)) selected.delete(slug); else selected.add(slug);
+        persist();
+        render();
+      });
+    });
+    const all = document.getElementById("btnAll");
+    if (all) all.addEventListener("click", () => {
+      selected = selected.size === tracked.length ? new Set() : new Set(tracked.map(p => p.slug));
+      persist();
+      render();
+    });
+    // 儲存目前勾選,成為這個身份在這台瀏覽器的設定
+    const save = document.getElementById("btnSaveWho");
+    if (save) save.addEventListener("click", () => {
+      try {
+        localStorage.setItem(CUSTOM_KEY(currentPerson), JSON.stringify([...selected]));
+        showToast("已儲存 " + findPerson(currentPerson).name + " 的設定");
+      } catch (e) { showToast("無法儲存(瀏覽器封鎖了本機儲存)"); }
+      render();
+    });
+    // 「先別吵我」開關:切換後重畫(狀態、排序、告急數都會跟著更新)
+    app.querySelectorAll(".qbtn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.quiet;
+        toggleQuiet(id);
+        showToast(quietSet.has(id) ? "已設為只在剩 " + ALWAYS_AT + " 份時提醒" : "已恢復正常提醒");
+        render();
+      });
+    });
+    // 補貨捷徑:複製新的限量數 + 開啟嘖嘖補貨頁
+    app.querySelectorAll(".rbtn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const newLimit = btn.dataset.new, add = btn.dataset.add, url = btn.dataset.url;
+        // 先複製(仍在使用者點擊的手勢內),再開新分頁
+        let copied = true;
+        try {
+          if (navigator.clipboard) navigator.clipboard.writeText(newLimit).catch(() => {});
+          else throw new Error("no clipboard");
+        } catch (e) {
+          const ta = document.createElement("textarea");
+          ta.value = newLimit; ta.style.position = "fixed"; ta.style.opacity = "0";
+          document.body.appendChild(ta); ta.select();
+          try { document.execCommand("copy"); } catch (e2) { copied = false; }
+          ta.remove();
+        }
+        window.open(url, "_blank", "noopener");
+        showToast(copied
+          ? "已複製 " + newLimit + "（+" + add + "）· 貼進「限量」欄位後按儲存"
+          : "請手動把限量改成 " + newLimit);
+      });
+    });
+    // 複製目前組合的網址 —— 這是唯一真正能跨裝置的方式(加書籤即可)
+    const copy = document.getElementById("btnCopyLink");
+    if (copy) copy.addEventListener("click", async () => {
+      const url = location.href;
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast("已複製連結,加書籤後任何裝置都能用");
+      } catch (e) {
+        // 沒有剪貼簿權限(常見於非 https 或舊瀏覽器)就退回選取讓使用者自己複製
+        const ta = document.createElement("textarea");
+        ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); showToast("已複製連結"); }
+        catch (e2) { showToast("請手動複製網址列的網址"); }
+        ta.remove();
+      }
+    });
+    // 清掉自己的設定,回到設定檔的預設
+    const reset = document.getElementById("btnResetWho");
+    if (reset) reset.addEventListener("click", () => {
+      try { localStorage.removeItem(CUSTOM_KEY(currentPerson)); } catch (e) {}
+      selected = personSet(findPerson(currentPerson));
+      persist();
+      showToast("已還原成預設");
+      render();
+    });
+  }
+
+  // ---- 載入資料 ----
+  // 帶時間戳 + no-store,確保繞過 CDN 與瀏覽器快取拿到最新的 data.json。
+  // 回傳 true 表示資料時間有變(有新資料)。
+  async function loadData() {
+    const res = await fetch("data.json?t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const j = await res.json();
+    const changed = j.generatedAt !== GENERATED_AT;
+    DATA = j.data || {};
+    CONFIG = j.config || {};
+    GENERATED_AT = j.generatedAt || "";
+    recompute();
+    return changed;
+  }
+
+  async function boot() {
+    app.innerHTML = '<p style="color:var(--muted);padding:8px 0">載入中…</p>';
+    try {
+      await loadData();
+    } catch (e) {
+      app.innerHTML = '<div class="empty-note">讀不到資料（data.json）。<br>' +
+        '若是剛部署,稍等一下再重新載入。</div>';
+      return;
+    }
+    initSelection();
+    render();
+
+    // 自動刷新:每 5 分鐘讀一次,只有資料真的變新才重繪(避免打斷你正在看的位置)
+    setInterval(async () => {
+      try { if (await loadData()) render(); } catch (e) { /* 網路暫時不通就下次再試 */ }
+    }, 5 * 60 * 1000);
+
+    // 每 30 秒更新「幾分鐘前更新」的文字,不整頁重繪
+    setInterval(() => {
+      const el = document.querySelector(".freshness .age");
+      if (el) { const a = ageInfo(); el.textContent = a.text; el.className = "age " + a.cls; }
+    }, 30 * 1000);
+  }
+
+  boot();
+</script>
+</body>
+</html>
